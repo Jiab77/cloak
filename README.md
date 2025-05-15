@@ -51,6 +51,7 @@ Arguments:
   -h | --help                        Print this help message
   -d | --dump <file>                 Dump data from given file
   -e | --extract <file>              Extract data from given file
+  -k | --keep                        Keep original input file (don't replace it)
 
 Examples:
 
