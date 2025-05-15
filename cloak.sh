@@ -6,12 +6,12 @@
 # Encrypt and hide (mostly) anything in plain sight
 # using OpenSSL or GPG and FFMpeg or ExifTool.
 #
-# Made by DgSe95
+# Made by Jiab77
 #
 # Notes:
 # - Part of this work has been inspired by the work done by THC.
 #
-# Version 0.0.0
+# Version 0.1.0
 
 # Options
 [[ -r $HOME/.debug ]] && set -o xtrace || set +o xtrace
@@ -20,6 +20,7 @@
 ENC_ALGO_OSSL="chacha20"
 ENC_ALGO_GPG="aes256"
 ALLOW_FOLDERS=true
+KEEP_ORIGINAL=false
 TAG_LINE="Modified by Cloak"
 RUN_MODE="embed"  # Available run modes: 'embed', 'extract', 'dump'
 
@@ -78,6 +79,7 @@ Arguments:
   -h | --help                         Print this help message
   -d | --dump <file>                  Dump data from given file
   -e | --extract <file>               Extract data from given file
+  -k | --keep                         Keep original input file (don't replace it)
 
 Examples:
 
@@ -155,7 +157,7 @@ function check_file_size() {
 }
 function get_diff() {
   echo -e "\nShowing changes...\n"
-  exiftool -P "$1" -diff %d/%f.mod.%e
+  exiftool -P "$1" -diff "$2"
 }
 function get_tags_ex() {
   echo -e "\nReading file tags...\n"
@@ -168,7 +170,7 @@ function get_tags_ff() {
 function hide_data_ex() {
   local INPUT_DIR ; INPUT_DIR="$(dirname "$1")"
   local INPUT_NAME ; INPUT_NAME="$(basename "$1")"
-  local OUTPUT_NAME ; OUTPUT_NAME="${INPUT_NAME:0: -4}.mod.${INPUT_NAME: -3:4}"
+  local OUTPUT_NAME ; OUTPUT_NAME="${INPUT_NAME}.mod"
   local ARCHIVE_NAME ; ARCHIVE_NAME="$(basename "$2").zip"
 
   if [[ ! $OUTPUT_NAME == "$INPUT_NAME" && -e "${INPUT_DIR}/${OUTPUT_NAME}" ]]; then
@@ -185,8 +187,8 @@ function hide_data_ex() {
   echo -e "\nAdding data to file...\n"
   if [[ -f "$2" ]]; then
     check_file_size "$1" "$2"
-    exiftool -P -comment="$TAG_LINE" -description="N:$(enc_str "$(basename "$2")");F:$(enc_file "$2")" -o %d/%f.mod.%e "$1" || die "Unable to embed and encrypt data in file."
-    get_diff "$1"
+    exiftool -P -comment="$TAG_LINE" -description="N:$(enc_str "$(basename "$2")");F:$(enc_file "$2")" -o "${INPUT_DIR}/${OUTPUT_NAME}" "$1" || die "Unable to embed and encrypt data in file."
+    get_diff "$1" "${INPUT_DIR}/${OUTPUT_NAME}"
   elif [[ -d "$2" && $ALLOW_FOLDERS == true ]]; then
     if [[ $(cmp_folder "$2") ]]; then
       if [[ -f "/tmp/$ARCHIVE_NAME" ]]; then
@@ -195,15 +197,21 @@ function hide_data_ex() {
         del_file "/tmp/$ARCHIVE_NAME"
       fi
     fi
+  elif [[ $2 == "-" ]]; then
+    exiftool -P -comment="$TAG_LINE" -description="S:$(enc_file /dev/stdin)" -o "${INPUT_DIR}/${OUTPUT_NAME}" "$1" || die "Unable to embed data in file."
+    get_diff "$1" "${INPUT_DIR}/${OUTPUT_NAME}"
   else
-    exiftool -P -comment="$TAG_LINE" -description="S:$(enc_data "$2")" -o %d/%f.mod.%e "$1" || die "Unable to embed data in file."
-    get_diff "$1"
+    exiftool -P -comment="$TAG_LINE" -description="S:$(enc_data "$2")" -o "${INPUT_DIR}/${OUTPUT_NAME}" "$1" || die "Unable to embed data in file."
+    get_diff "$1" "${INPUT_DIR}/${OUTPUT_NAME}"
+  fi
+  if [[ -r "${INPUT_DIR}/${OUTPUT_NAME}" && $KEEP_ORIGINAL == false ]]; then
+    mv -fv "${INPUT_DIR}/${OUTPUT_NAME}" "${INPUT_DIR}/${INPUT_NAME}"
   fi
 }
 function hide_data_ff() {
   local INPUT_DIR ; INPUT_DIR="$(dirname "$1")"
   local INPUT_NAME ; INPUT_NAME="$(basename "$1")"
-  local OUTPUT_NAME ; OUTPUT_NAME="${INPUT_NAME:0: -4}.mod.${INPUT_NAME: -3:4}"
+  local OUTPUT_NAME ; OUTPUT_NAME="${INPUT_NAME}.mod"
   local ARCHIVE_NAME ; ARCHIVE_NAME="$(basename "$2").zip"
 
   echo -e "\nAdding data to file...\n"
@@ -219,7 +227,7 @@ function hide_data_ff() {
            "${INPUT_DIR}/${OUTPUT_NAME}" \
            || die "Unable to embed and encrypt data in file."
 
-    get_diff "$1"
+    get_diff "$1" "${INPUT_DIR}/${OUTPUT_NAME}"
   elif [[ -d "$2" && $ALLOW_FOLDERS == true ]]; then
     if [[ $(cmp_folder "$2") ]]; then
       if [[ -f "/tmp/$ARCHIVE_NAME" ]]; then
@@ -228,6 +236,18 @@ function hide_data_ff() {
         del_file "/tmp/$ARCHIVE_NAME"
       fi
     fi
+  elif [[ $2 == "-" ]]; then
+    ffmpeg -hide_banner \
+           -y -i "$1" \
+           -c copy \
+           -movflags use_metadata_tags \
+           -map_metadata 0 \
+           -metadata comment="$TAG_LINE" \
+           -metadata description="S:$(enc_file /dev/stdin)" \
+           "${INPUT_DIR}/${OUTPUT_NAME}" \
+           || die "Unable to embed data in file."
+
+    get_diff "$1" "${INPUT_DIR}/${OUTPUT_NAME}"
   else
     ffmpeg -hide_banner \
            -y -i "$1" \
@@ -239,7 +259,10 @@ function hide_data_ff() {
            "${INPUT_DIR}/${OUTPUT_NAME}" \
            || die "Unable to embed data in file."
 
-    get_diff "$1"
+    get_diff "$1" "${INPUT_DIR}/${OUTPUT_NAME}"
+  fi
+  if [[ -r "${INPUT_DIR}/${OUTPUT_NAME}" && $KEEP_ORIGINAL == false ]]; then
+    mv -fv "${INPUT_DIR}/${OUTPUT_NAME}" "${INPUT_DIR}/${INPUT_NAME}"
   fi
 }
 function get_data_ex() {
@@ -428,13 +451,15 @@ function get_tags() {
 }
 
 # Args
-[[ $1 == "-h" || $1 == "--help" ]] && print_help
-[[ $1 == "-d" || $1 == "--dump" ]] && {
-  RUN_MODE="dump" ; shift
-}
-[[ $1 == "-e" || $1 == "--extract" ]] && {
-  RUN_MODE="extract" ; shift
-}
+while [[ $# -ne 0 ]]; do
+  case $1 in
+    -h|--help) print_help ;;
+    -d|--debug) RUN_MODE="dump" ; shift ;;
+    -e|--extract) RUN_MODE="extract" ; shift ;;
+    -k|--keep) KEEP_ORIGINAL=true ; shift ;;
+    *) break ;;
+  esac
+done
 
 # Checks
 [[ $# -eq 0 ]] && print_usage
