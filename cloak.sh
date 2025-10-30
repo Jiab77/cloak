@@ -11,7 +11,7 @@
 # Notes:
 # - Part of this project has been inspired by the work done by THC.
 #
-# Version 0.2.0
+# Version 0.2.1
 
 # Options
 [[ -e $HOME/.debug ]] && set -x
@@ -213,7 +213,7 @@ function hide_data_ex() {
   local INPUT_DIR ; INPUT_DIR="$(dirname "$1")"
   local INPUT_NAME ; INPUT_NAME="$(basename "$1")"
   local INPUT_TAGS ; INPUT_TAGS="/tmp/${INPUT_NAME}.tags"
-  local OUTPUT_NAME ; OUTPUT_NAME="${INPUT_NAME}.mod"
+  local OUTPUT_NAME ; OUTPUT_NAME="${INPUT_NAME%%.*}.mod.${INPUT_NAME##*.}"
   local ARCHIVE_NAME ; ARCHIVE_NAME="$(basename "$2").zip"
 
   if [[ ! $OUTPUT_NAME == "$INPUT_NAME" && -e "${INPUT_DIR}/${OUTPUT_NAME}" ]]; then
@@ -275,7 +275,7 @@ function hide_data_ff() {
   local INPUT_NAME ; INPUT_NAME="$(basename "$1")"
   local INPUT_TAGS ; INPUT_TAGS="/tmp/${INPUT_NAME}.tags"
   local OUTPUT_FORMAT ; OUTPUT_FORMAT="$(get_input_format "$1")"
-  local OUTPUT_NAME ; OUTPUT_NAME="${INPUT_NAME}.mod"
+  local OUTPUT_NAME ; OUTPUT_NAME="${INPUT_NAME%%.*}.mod.${INPUT_NAME##*.}"
   local ARCHIVE_NAME ; ARCHIVE_NAME="$(basename "$2").zip"
 
   log -e "\nAdding data to file...\n"
